@@ -45,9 +45,3 @@ while id_to_token == id_to_token:
             print('[-] INVALID' + ' ' + token)
     finally:
         print("")
-    
-    # Send a "running" message to the webhook every 10 minutes
-    webhook_time = 60 * 10  # Send a message every 10 minutes
-    time.sleep(webhook_time)
-    webhook = DiscordWebhook(url=WEBHOOK_URL, content="@everyone Code is still running")
-    response = webhook.execute()
